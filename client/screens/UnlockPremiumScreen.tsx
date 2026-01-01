@@ -150,6 +150,19 @@ export default function UnlockPremiumScreen({ navigation }: { navigation: any })
         <ThemedText style={[styles.note, { color: theme.textSecondary }]}>
           Auto-renewable subscription. Cancel anytime in Settings.
         </ThemedText>
+        <View style={styles.linksRow}>
+          <Button onPress={() => navigation.navigate("Legal", { type: "terms" })} variant="ghost" style={styles.linkButton}>
+            <ThemedText style={[styles.linkText, { color: theme.primary }]}>
+              Terms of Use
+            </ThemedText>
+          </Button>
+          <ThemedText style={[styles.linkSeparator, { color: theme.textSecondary }]}>|</ThemedText>
+          <Button onPress={() => navigation.navigate("Legal", { type: "privacy" })} variant="ghost" style={styles.linkButton}>
+            <ThemedText style={[styles.linkText, { color: theme.primary }]}>
+              Privacy Policy
+            </ThemedText>
+          </Button>
+        </View>
       </View>
     </ScrollView>
   );
@@ -247,5 +260,20 @@ const styles = StyleSheet.create({
   note: {
     fontSize: 12,
     textAlign: "center",
+  },
+  linksRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: Spacing.sm,
+  },
+  linkButton: {
+    paddingHorizontal: Spacing.xs,
+  },
+  linkText: {
+    fontSize: 12,
+  },
+  linkSeparator: {
+    fontSize: 12,
   },
 });

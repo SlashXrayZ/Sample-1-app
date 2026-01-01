@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { View, StyleSheet, Platform } from "react-native";
+import { View, StyleSheet, Platform, Linking, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -59,11 +59,41 @@ export default function PremiumUnlockedScreen({ navigation }: { navigation: any 
     });
   };
 
+  const handleManageSubscription = async () => {
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+
+    if (Platform.OS === "ios") {
+      try {
+        await Linking.openURL("https://apps.apple.com/account/subscriptions");
+      } catch (error) {
+        Alert.alert(
+          "Manage Subscription",
+          "Go to Settings → Apple ID → Subscriptions to manage or cancel your subscription."
+        );
+      }
+    } else if (Platform.OS === "android") {
+      try {
+        await Linking.openURL("https://play.google.com/store/account/subscriptions");
+      } catch (error) {
+        Alert.alert(
+          "Manage Subscription",
+          "Go to Google Play Store → Menu → Subscriptions to manage or cancel your subscription."
+        );
+      }
+    } else {
+      Alert.alert(
+        "Manage Subscription",
+        "To manage or cancel your subscription, go to your device's app store settings."
+      );
+    }
+  };
+
   const features = [
     { icon: "award", label: "Weighted GPA" },
     { icon: "layers", label: "Multiple Semesters" },
     { icon: "trending-up", label: "GPA Prediction" },
-    { icon: "folder", label: "Course Profiles" },
     { icon: "share", label: "Export & Share" },
     { icon: "bar-chart-2", label: "Visual Analytics" },
   ];
@@ -115,6 +145,15 @@ export default function PremiumUnlockedScreen({ navigation }: { navigation: any 
         <Button onPress={handleContinue} style={styles.continueButton}>
           Get Started
         </Button>
+        <Button
+          onPress={handleManageSubscription}
+          variant="ghost"
+          style={styles.manageButton}
+        >
+          <ThemedText style={[styles.manageText, { color: theme.textSecondary }]}>
+            Manage Subscription
+          </ThemedText>
+        </Button>
       </Animated.View>
     </View>
   );
@@ -146,6 +185,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     textAlign: "center",
     marginBottom: Spacing.sm,
+    lineHeight: 36,
   },
   subtitle: {
     fontSize: 16,
@@ -177,5 +217,12 @@ const styles = StyleSheet.create({
   },
   continueButton: {
     width: "100%",
+  },
+  manageButton: {
+    marginTop: Spacing.sm,
+    alignSelf: "center",
+  },
+  manageText: {
+    fontSize: 14,
   },
 });

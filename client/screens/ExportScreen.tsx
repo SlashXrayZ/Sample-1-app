@@ -3,7 +3,6 @@ import { View, StyleSheet, Platform, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import ViewShot from "react-native-view-shot";
 import * as Sharing from "expo-sharing";
 import * as Print from "expo-print";
@@ -13,6 +12,7 @@ import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useTheme } from "@/hooks/useTheme";
+import { useUserStorage } from "@/hooks/useUserStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { Semester, calculateGPA, calculateCumulativeGPA, SCALE_CONFIG } from "@/types/gpa";
 
@@ -23,22 +23,21 @@ export default function ExportScreen() {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const viewShotRef = useRef<ViewShot>(null);
+  const { getItem, userId } = useUserStorage();
 
   const [semesters, setSemesters] = useState<Semester[]>([]);
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     loadSemesters();
-  }, []);
+  }, [userId, getItem]);
 
   const loadSemesters = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(SEMESTERS_KEY);
-      if (stored) {
-        setSemesters(JSON.parse(stored));
-      }
-    } catch {
-      // Silent fail
+    const stored = await getItem<Semester[]>(SEMESTERS_KEY);
+    if (stored) {
+      setSemesters(stored);
+    } else {
+      setSemesters([]);
     }
   };
 

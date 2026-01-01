@@ -2,6 +2,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { HeaderTitle } from "@/components/HeaderTitle";
+import { HeaderMenu } from "@/components/HeaderMenu";
 
 import HomeScreen from "@/screens/HomeScreen";
 import GPACalculatorScreen from "@/screens/GPACalculatorScreen";
@@ -14,6 +15,7 @@ import AnalyticsScreen from "@/screens/AnalyticsScreen";
 import ExportScreen from "@/screens/ExportScreen";
 import LoginScreen from "@/screens/LoginScreen";
 import PaywallScreen from "@/screens/PaywallScreen";
+import LegalScreen from "@/screens/LegalScreen";
 
 export type RootStackParamList = {
   Home: undefined;
@@ -25,8 +27,9 @@ export type RootStackParamList = {
   Prediction: undefined;
   Analytics: undefined;
   Export: undefined;
-  Login: undefined;
+  Login: { mode?: "switch" };
   Paywall: undefined;
+  Legal: { type: "privacy" | "terms" };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -41,6 +44,7 @@ export default function RootStackNavigator() {
         component={HomeScreen}
         options={{
           headerTitle: () => <HeaderTitle title="GPA Calculator" />,
+          headerRight: () => <HeaderMenu />,
         }}
       />
       <Stack.Screen
@@ -113,6 +117,13 @@ export default function RootStackNavigator() {
         options={{
           headerTitle: "Premium",
         }}
+      />
+      <Stack.Screen
+        name="Legal"
+        component={LegalScreen}
+        options={({ route }) => ({
+          headerTitle: route.params.type === "privacy" ? "Privacy Policy" : "Terms of Use",
+        })}
       />
     </Stack.Navigator>
   );

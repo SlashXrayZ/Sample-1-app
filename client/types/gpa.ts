@@ -108,6 +108,18 @@ export const SCALE_CONFIG = {
   },
 };
 
+export function getWeightedGPACap(courses: Course[]): number {
+  const hasAP = courses.some(c => c.isWeighted && c.weightType === "AP");
+  const hasHonours = courses.some(c => c.isWeighted && c.weightType === "Honours");
+  
+  if (hasAP) {
+    return 5.0;
+  } else if (hasHonours) {
+    return 4.5;
+  }
+  return 4.0;
+}
+
 export function calculateGPA(
   courses: Course[],
   scale: GPAScale,
@@ -132,7 +144,14 @@ export function calculateGPA(
     totalCredits += course.credits;
   });
 
-  return totalCredits > 0 ? totalPoints / totalCredits : 0;
+  const rawGPA = totalCredits > 0 ? totalPoints / totalCredits : 0;
+  
+  if (useWeighting && scale === "US") {
+    const cap = getWeightedGPACap(courses);
+    return Math.min(rawGPA, cap);
+  }
+  
+  return rawGPA;
 }
 
 export function calculateCumulativeGPA(

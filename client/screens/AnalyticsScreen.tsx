@@ -4,15 +4,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Svg, { Path, Circle, Line, Text as SvgText } from "react-native-svg";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useTheme } from "@/hooks/useTheme";
+import { useUserStorage } from "@/hooks/useUserStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { Semester, calculateGPA, SCALE_CONFIG } from "@/types/gpa";
+import { Semester, calculateGPA, calculateCumulativeGPA, SCALE_CONFIG } from "@/types/gpa";
 
 const SEMESTERS_KEY = "@gpa_semesters";
 const CHART_WIDTH = Dimensions.get("window").width - Spacing.lg * 2;
@@ -23,23 +23,22 @@ export default function AnalyticsScreen() {
   const { theme } = useTheme();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
+  const { getItem, userId } = useUserStorage();
 
   const [semesters, setSemesters] = useState<Semester[]>([]);
 
   useFocusEffect(
     useCallback(() => {
       loadSemesters();
-    }, [])
+    }, [userId, getItem])
   );
 
   const loadSemesters = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(SEMESTERS_KEY);
-      if (stored) {
-        setSemesters(JSON.parse(stored));
-      }
-    } catch {
-      // Silent fail
+    const stored = await getItem<Semester[]>(SEMESTERS_KEY);
+    if (stored) {
+      setSemesters(stored);
+    } else {
+      setSemesters([]);
     }
   };
 
@@ -52,9 +51,7 @@ export default function AnalyticsScreen() {
   }));
 
   const maxGPA = semesters.length > 0 ? SCALE_CONFIG[semesters[0].scale].max : 4.0;
-  const avgGPA = semesterData.length > 0
-    ? semesterData.reduce((sum, s) => sum + s.gpa, 0) / semesterData.length
-    : 0;
+  const cumulativeGPA = calculateCumulativeGPA(semesters);
   const totalCredits = semesterData.reduce((sum, s) => sum + s.credits, 0);
   const totalCourses = semesterData.reduce((sum, s) => sum + s.courses, 0);
 
@@ -171,10 +168,10 @@ export default function AnalyticsScreen() {
             ]}
           >
             <ThemedText style={[styles.statValue, { color: theme.primary }]}>
-              {semesterData.length > 0 ? avgGPA.toFixed(2) : "—"}
+              {semesterData.length > 0 ? cumulativeGPA.toFixed(2) : "—"}
             </ThemedText>
             <ThemedText style={[styles.statLabel, { color: theme.textSecondary }]}>
-              Average GPA
+              Cumulative GPA
             </ThemedText>
           </View>
 

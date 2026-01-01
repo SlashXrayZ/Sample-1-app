@@ -6,11 +6,11 @@ import {
   Pressable,
   Alert,
   Platform,
+  Switch,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { Feather } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRoute } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -18,8 +18,10 @@ import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useTheme } from "@/hooks/useTheme";
+import { usePremium } from "@/contexts/PremiumContext";
+import { useUserStorage } from "@/hooks/useUserStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { Semester, Course, calculateGPA, SCALE_CONFIG } from "@/types/gpa";
+import { Semester, Course, calculateGPA, getWeightedGPACap, SCALE_CONFIG, DEFAULT_WEIGHT_MULTIPLIERS } from "@/types/gpa";
 
 const SEMESTERS_KEY = "@gpa_semesters";
 
@@ -29,46 +31,44 @@ export default function SemesterDetailScreen() {
   const insets = useSafeAreaInsets();
   const route = useRoute<any>();
   const { semesterId } = route.params || {};
+  const { getItem, setItem, userId } = useUserStorage();
+  const { isPremium } = usePremium();
 
   const [semester, setSemester] = useState<Semester | null>(null);
   const [courseName, setCourseName] = useState("");
   const [selectedGrade, setSelectedGrade] = useState("");
   const [credits, setCredits] = useState("");
+  const [isWeighted, setIsWeighted] = useState(false);
+  const [weightType, setWeightType] = useState<"AP" | "Honours" | "Standard">("AP");
+  const [useWeightedGPA, setUseWeightedGPA] = useState(false);
 
   useEffect(() => {
     loadSemester();
-  }, [semesterId]);
+  }, [semesterId, userId, getItem]);
 
   const loadSemester = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(SEMESTERS_KEY);
-      if (stored) {
-        const semesters: Semester[] = JSON.parse(stored);
-        const found = semesters.find((s) => s.id === semesterId);
-        if (found) {
-          setSemester(found);
-          setSelectedGrade(SCALE_CONFIG[found.scale].grades[0]);
-        }
+    const semesters = await getItem<Semester[]>(SEMESTERS_KEY);
+    if (semesters) {
+      const found = semesters.find((s) => s.id === semesterId);
+      if (found) {
+        setSemester(found);
+        setSelectedGrade(SCALE_CONFIG[found.scale].grades[0]);
       }
-    } catch {
-      // Silent fail
     }
   };
 
   const saveSemester = async (updated: Semester) => {
-    try {
-      const stored = await AsyncStorage.getItem(SEMESTERS_KEY);
-      if (stored) {
-        const semesters: Semester[] = JSON.parse(stored);
-        const index = semesters.findIndex((s) => s.id === semesterId);
-        if (index !== -1) {
-          semesters[index] = updated;
-          await AsyncStorage.setItem(SEMESTERS_KEY, JSON.stringify(semesters));
-        }
-      }
-    } catch {
-      // Silent fail
+    let semesters = await getItem<Semester[]>(SEMESTERS_KEY);
+    if (!semesters) {
+      semesters = [];
     }
+    const index = semesters.findIndex((s) => s.id === semesterId);
+    if (index !== -1) {
+      semesters[index] = updated;
+    } else {
+      semesters.push(updated);
+    }
+    await setItem(SEMESTERS_KEY, semesters);
   };
 
   const handleAddCourse = () => {
@@ -100,6 +100,8 @@ export default function SemesterDetailScreen() {
       name: courseName.trim(),
       grade: selectedGrade,
       credits: creditValue,
+      isWeighted: isPremium && isWeighted && semester.scale === "US",
+      weightType: isPremium && isWeighted && semester.scale === "US" ? weightType : "Standard",
     };
 
     const updated = {
@@ -112,6 +114,7 @@ export default function SemesterDetailScreen() {
     setCourseName("");
     setCredits("");
     setSelectedGrade(config.grades[0]);
+    setIsWeighted(false);
   };
 
   const handleDeleteCourse = (courseId: string) => {
@@ -154,7 +157,8 @@ export default function SemesterDetailScreen() {
   }
 
   const config = SCALE_CONFIG[semester.scale];
-  const gpa = calculateGPA(semester.courses, semester.scale);
+  const hasWeightedCourses = semester.courses.some(c => c.isWeighted);
+  const gpa = calculateGPA(semester.courses, semester.scale, isPremium && useWeightedGPA, DEFAULT_WEIGHT_MULTIPLIERS);
   const totalCredits = semester.courses.reduce((sum, c) => sum + c.credits, 0);
   const isAddDisabled = !courseName.trim() || !credits.trim();
 
@@ -177,7 +181,7 @@ export default function SemesterDetailScreen() {
           ]}
         >
           <ThemedText style={[styles.gpaLabel, { color: theme.textSecondary }]}>
-            {semester.name} - {config.gpaLabel}
+            {semester.name} - {useWeightedGPA ? "Weighted GPA" : config.gpaLabel}
           </ThemedText>
           <View style={styles.gpaValueRow}>
             <ThemedText style={[styles.gpaValue, { color: theme.primary }]}>
@@ -185,7 +189,10 @@ export default function SemesterDetailScreen() {
             </ThemedText>
             {semester.courses.length > 0 ? (
               <ThemedText style={[styles.gpaOutOf, { color: theme.textSecondary }]}>
-                {` / ${config.max.toFixed(1)}`}
+                {useWeightedGPA 
+                  ? ` / ${getWeightedGPACap(semester.courses).toFixed(1)}`
+                  : ` / ${config.max.toFixed(1)}`
+                }
               </ThemedText>
             ) : null}
           </View>
@@ -194,6 +201,24 @@ export default function SemesterDetailScreen() {
               {semester.courses.length} course{semester.courses.length !== 1 ? "s" : ""} |{" "}
               {totalCredits} credits
             </ThemedText>
+          ) : null}
+          {useWeightedGPA && semester.courses.length > 0 ? (
+            <ThemedText style={[styles.gpaDisclaimer, { color: theme.textSecondary }]}>
+              Weighted GPA rules vary by school.
+            </ThemedText>
+          ) : null}
+          {isPremium && semester.scale === "US" && hasWeightedCourses ? (
+            <View style={styles.weightedGPAToggle}>
+              <ThemedText style={[styles.weightedGPAToggleText, { color: theme.textSecondary }]}>
+                Use Weighted GPA
+              </ThemedText>
+              <Switch
+                value={useWeightedGPA}
+                onValueChange={setUseWeightedGPA}
+                trackColor={{ false: theme.border, true: theme.primary }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
           ) : null}
         </View>
 
@@ -276,6 +301,49 @@ export default function SemesterDetailScreen() {
               );
             })}
           </View>
+
+          {isPremium && semester.scale === "US" ? (
+            <View style={styles.weightedSection}>
+              <View style={styles.weightedToggleRow}>
+                <ThemedText style={styles.inputLabel}>Weighted Course</ThemedText>
+                <Switch
+                  value={isWeighted}
+                  onValueChange={setIsWeighted}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+              {isWeighted ? (
+                <View style={styles.weightTypeGrid}>
+                  {(["AP", "Honours"] as const).map((type) => {
+                    const isSelected = weightType === type;
+                    return (
+                      <Pressable
+                        key={type}
+                        onPress={() => setWeightType(type)}
+                        style={[
+                          styles.weightTypeButton,
+                          {
+                            backgroundColor: isSelected ? theme.primary : theme.backgroundDefault,
+                            borderColor: isSelected ? theme.primary : theme.border,
+                          },
+                        ]}
+                      >
+                        <ThemedText
+                          style={[
+                            styles.weightTypeText,
+                            { color: isSelected ? "#FFFFFF" : theme.text },
+                          ]}
+                        >
+                          {type} (+{DEFAULT_WEIGHT_MULTIPLIERS[type].toFixed(1)})
+                        </ThemedText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          ) : null}
 
           <Button onPress={handleAddCourse} disabled={isAddDisabled} style={styles.addButton}>
             Add Course
@@ -371,6 +439,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: Spacing.sm,
   },
+  gpaDisclaimer: {
+    fontSize: 12,
+    fontStyle: "italic",
+    marginTop: Spacing.xs,
+  },
+  weightedGPAToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(128, 128, 128, 0.2)",
+  },
+  weightedGPAToggleText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
   inputCard: {
     padding: Spacing.lg,
     borderRadius: BorderRadius.sm,
@@ -422,6 +509,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   creditButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  weightedSection: {
+    marginBottom: Spacing.md,
+  },
+  weightedToggleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  weightTypeGrid: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  weightTypeButton: {
+    flex: 1,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.xs,
+    borderWidth: 1,
+    alignItems: "center",
+  },
+  weightTypeText: {
     fontSize: 14,
     fontWeight: "600",
   },

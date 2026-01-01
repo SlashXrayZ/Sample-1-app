@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useEffect } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   StyleSheet,
@@ -26,12 +25,14 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { usePremium } from "@/contexts/PremiumContext";
+import { useUserStorage } from "@/hooks/useUserStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import {
   GPAScale,
   Course,
   SCALE_CONFIG,
   calculateGPA,
+  getWeightedGPACap,
   DEFAULT_WEIGHT_MULTIPLIERS,
 } from "@/types/gpa";
 
@@ -170,6 +171,7 @@ export default function GPACalculatorScreen({ navigation }: { navigation: any })
   const { isPremium } = usePremium();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
+  const { getItem, setItem, userId } = useUserStorage();
 
   const [courseName, setCourseName] = useState("");
   const [selectedGrade, setSelectedGrade] = useState("A");
@@ -186,30 +188,22 @@ export default function GPACalculatorScreen({ navigation }: { navigation: any })
 
   useEffect(() => {
     const loadCourses = async () => {
-      try {
-        const stored = await AsyncStorage.getItem(getStorageKey(scale));
-        if (stored) {
-          setCourses(JSON.parse(stored));
-        } else {
-          setCourses([]);
-        }
-      } catch {
+      const stored = await getItem<Course[]>(getStorageKey(scale));
+      if (stored) {
+        setCourses(stored);
+      } else {
         setCourses([]);
       }
     };
     loadCourses();
-  }, [scale]);
+  }, [scale, userId, getItem]);
 
   useEffect(() => {
     const saveCourses = async () => {
-      try {
-        await AsyncStorage.setItem(getStorageKey(scale), JSON.stringify(courses));
-      } catch {
-        // Storage error - silent fail
-      }
+      await setItem(getStorageKey(scale), courses);
     };
     saveCourses();
-  }, [courses, scale]);
+  }, [courses, scale, setItem, userId]);
 
   const handleScaleChange = (newScale: GPAScale) => {
     setScale(newScale);
@@ -473,7 +467,7 @@ export default function GPACalculatorScreen({ navigation }: { navigation: any })
           ]}
         >
           <ThemedText style={[styles.gpaLabel, { color: theme.textSecondary }]}>
-            {useWeightedGPA ? "Weighted GPA (5.0 scale)" : scaleConfig.gpaLabel}
+            {useWeightedGPA ? "Weighted GPA" : scaleConfig.gpaLabel}
           </ThemedText>
           <View style={styles.gpaValueRow}>
             <ThemedText style={[styles.gpaValue, { color: theme.primary }]}>
@@ -481,7 +475,10 @@ export default function GPACalculatorScreen({ navigation }: { navigation: any })
             </ThemedText>
             {courses.length > 0 ? (
               <ThemedText style={[styles.gpaOutOf, { color: theme.textSecondary }]}>
-                {` / ${useWeightedGPA ? scaleConfig.weightedMax.toFixed(1) : scaleConfig.max.toFixed(1)}`}
+                {useWeightedGPA 
+                  ? ` / ${getWeightedGPACap(courses).toFixed(1)}`
+                  : ` / ${scaleConfig.max.toFixed(1)}`
+                }
               </ThemedText>
             ) : null}
           </View>
@@ -489,6 +486,11 @@ export default function GPACalculatorScreen({ navigation }: { navigation: any })
             <ThemedText style={[styles.gpaSummary, { color: theme.textSecondary }]}>
               {courses.length} course{courses.length !== 1 ? "s" : ""} |{" "}
               {courses.reduce((sum, c) => sum + c.credits, 0)} credits
+            </ThemedText>
+          ) : null}
+          {useWeightedGPA && courses.length > 0 ? (
+            <ThemedText style={[styles.gpaDisclaimer, { color: theme.textSecondary }]}>
+              Weighted GPA rules vary by school.
             </ThemedText>
           ) : null}
           {isPremium && scale === "US" && hasWeightedCourses ? (
@@ -729,6 +731,11 @@ const styles = StyleSheet.create({
   gpaSummary: {
     fontSize: 14,
     marginTop: Spacing.sm,
+  },
+  gpaDisclaimer: {
+    fontSize: 12,
+    fontStyle: "italic",
+    marginTop: Spacing.xs,
   },
   weightedGPAToggle: {
     flexDirection: "row",

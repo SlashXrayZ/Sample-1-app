@@ -1,33 +1,58 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, StyleSheet, Platform, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Haptics from "expo-haptics";
+import { RouteProp, useRoute } from "@react-navigation/native";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePremium } from "@/contexts/PremiumContext";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { RootStackParamList } from "@/navigation/RootStackNavigator";
+
+type LoginScreenRouteProp = RouteProp<RootStackParamList, "Login">;
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
+  const route = useRoute<LoginScreenRouteProp>();
   const { signInWithApple, signInWithGoogle, user } = useAuth();
+  const { restorePurchases } = usePremium();
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const hasHandledUser = useRef(false);
+  
+  const isSwitchMode = route.params?.mode === "switch";
 
   useEffect(() => {
     checkAppleAvailability();
   }, []);
 
   useEffect(() => {
-    if (user) {
+    if (user && !hasHandledUser.current) {
+      hasHandledUser.current = true;
+      handlePostSignIn();
+    }
+  }, [user]);
+
+  const handlePostSignIn = async () => {
+    if (isSwitchMode) {
+      try {
+        await restorePurchases();
+      } catch {}
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Home" }],
+      });
+    } else {
       navigation.replace("Paywall");
     }
-  }, [user, navigation]);
+  };
 
   const checkAppleAvailability = async () => {
     if (Platform.OS === "ios") {
@@ -49,8 +74,8 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
 
     try {
       const success = await signInWithApple();
-      if (success) {
-        navigation.replace("Paywall");
+      if (!success) {
+        setIsLoading(false);
       }
     } catch (error) {
       if (Platform.OS === "web") {
@@ -58,7 +83,6 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       } else {
         Alert.alert("Sign In Failed", "Please try again.");
       }
-    } finally {
       setIsLoading(false);
     }
   };
@@ -69,16 +93,26 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
     triggerHaptic();
 
     try {
-      await signInWithGoogle();
+      const success = await signInWithGoogle();
+      if (!success) {
+        setIsLoading(false);
+      }
     } catch (error) {
       if (Platform.OS === "web") {
         window.alert("Sign in failed. Please try again.");
       } else {
         Alert.alert("Sign In Failed", "Please try again.");
       }
-    } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSkip = () => {
+    triggerHaptic();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: "Home" }],
+    });
   };
 
   return (
@@ -94,11 +128,16 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
       >
         <View style={styles.header}>
           <View style={[styles.iconContainer, { backgroundColor: theme.primary + "20" }]}>
-            <Feather name="user" size={48} color={theme.primary} />
+            <Feather name={isSwitchMode ? "users" : "user"} size={48} color={theme.primary} />
           </View>
-          <ThemedText style={styles.title}>Sign In</ThemedText>
+          <ThemedText style={styles.title}>
+            {isSwitchMode ? "Switch Account" : "Sign In"}
+          </ThemedText>
           <ThemedText style={[styles.subtitle, { color: theme.textSecondary }]}>
-            Sign in to access premium features and sync your data across devices
+            {isSwitchMode 
+              ? "Sign in to a different account to access your purchases and data"
+              : "Sign in to subscribe to premium features or restore your purchases"
+            }
           </ThemedText>
         </View>
 
@@ -141,10 +180,26 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
               <ThemedText style={styles.buttonText}>Continue with Google</ThemedText>
             </View>
           </Button>
+
+          {isSwitchMode ? (
+            <Button
+              onPress={handleSkip}
+              variant="ghost"
+              style={styles.skipButton}
+              disabled={isLoading}
+            >
+              <ThemedText style={[styles.skipText, { color: theme.textSecondary }]}>
+                Continue without signing in
+              </ThemedText>
+            </Button>
+          ) : null}
         </View>
 
         <ThemedText style={[styles.terms, { color: theme.textSecondary }]}>
-          By continuing, you agree to our Terms of Service and Privacy Policy
+          {isSwitchMode
+            ? "Your app data is stored separately for each account"
+            : "By continuing, you agree to our Terms of Service and Privacy Policy"
+          }
         </ThemedText>
       </View>
     </ThemedView>
@@ -193,6 +248,12 @@ const styles = StyleSheet.create({
   },
   signInButton: {
     height: 50,
+  },
+  skipButton: {
+    marginTop: Spacing.sm,
+  },
+  skipText: {
+    fontSize: 14,
   },
   buttonContent: {
     flexDirection: "row",

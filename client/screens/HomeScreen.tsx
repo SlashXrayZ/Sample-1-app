@@ -7,6 +7,7 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { usePremium } from "@/contexts/PremiumContext";
+import { useAuth } from "@/contexts/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
@@ -61,6 +62,7 @@ function MenuItem({ icon, title, description, onPress, isPremium: isPremiumFeatu
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const { theme } = useTheme();
   const { isPremium } = usePremium();
+  const { user } = useAuth();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
 
@@ -70,6 +72,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     } else {
       navigation.navigate(screen);
     }
+  };
+
+  const getAuthStatusText = () => {
+    if (!user) {
+      return "Sign in to restore purchases";
+    }
+    return user.provider === "apple" ? "Signed in with Apple" : "Signed in with Google";
+  };
+
+  const getAuthIcon = (): keyof typeof Feather.glyphMap => {
+    if (!user) return "user";
+    return user.provider === "apple" ? "smartphone" : "globe";
   };
 
   return (
@@ -84,6 +98,39 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
           },
         ]}
       >
+        <Pressable
+          onPress={() => !user && navigation.navigate("Login")}
+          disabled={!!user}
+          style={({ pressed }) => [
+            styles.authCard,
+            {
+              backgroundColor: user ? theme.backgroundDefault : theme.primary + "10",
+              borderColor: user ? theme.border : theme.primary,
+              opacity: pressed && !user ? 0.8 : 1,
+            },
+          ]}
+        >
+          <View style={[styles.authIconContainer, { backgroundColor: user ? theme.primary + "15" : theme.primary + "20" }]}>
+            <Feather name={getAuthIcon()} size={20} color={theme.primary} />
+          </View>
+          <View style={styles.authContent}>
+            <ThemedText style={[styles.authStatus, { color: user ? theme.text : theme.primary }]}>
+              {getAuthStatusText()}
+            </ThemedText>
+            {isPremium ? (
+              <View style={styles.premiumStatus}>
+                <Feather name="check-circle" size={12} color={theme.primary} />
+                <ThemedText style={[styles.premiumStatusText, { color: theme.primary }]}>
+                  Premium Active
+                </ThemedText>
+              </View>
+            ) : null}
+          </View>
+          {!user ? (
+            <Feather name="chevron-right" size={20} color={theme.primary} />
+          ) : null}
+        </Pressable>
+
         <ThemedText style={styles.sectionLabel}>Free Features</ThemedText>
         <View style={styles.section}>
           <MenuItem
@@ -141,19 +188,12 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
                 Unlock Premium
               </ThemedText>
               <ThemedText style={[styles.unlockDescription, { color: theme.textSecondary }]}>
-                Get access to all features with a one-time unlock
+                Get access to all features with a monthly subscription
               </ThemedText>
             </View>
             <Feather name="chevron-right" size={20} color={theme.primary} />
           </Pressable>
-        ) : (
-          <View style={[styles.premiumCard, { backgroundColor: theme.primary + "15", borderColor: theme.primary }]}>
-            <Feather name="check-circle" size={24} color={theme.primary} />
-            <ThemedText style={[styles.premiumText, { color: theme.primary }]}>
-              Premium Unlocked
-            </ThemedText>
-          </View>
-        )}
+        ) : null}
       </ScrollView>
     </ThemedView>
   );
@@ -169,6 +209,38 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: Spacing.lg,
     gap: Spacing.md,
+  },
+  authCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    gap: Spacing.md,
+  },
+  authIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  authContent: {
+    flex: 1,
+    gap: Spacing.xs,
+  },
+  authStatus: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  premiumStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  premiumStatusText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   sectionLabel: {
     fontSize: 13,
@@ -246,19 +318,5 @@ const styles = StyleSheet.create({
   },
   unlockDescription: {
     fontSize: 13,
-  },
-  premiumCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    gap: Spacing.sm,
-    marginTop: Spacing.lg,
-  },
-  premiumText: {
-    fontSize: 16,
-    fontWeight: "600",
   },
 });

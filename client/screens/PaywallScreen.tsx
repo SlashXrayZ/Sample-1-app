@@ -14,6 +14,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 const SUBSCRIPTION_SKU = "com.gpacalculator.app.premium.monthly";
+const SUBSCRIPTION_PRICE = "$1.99";
+const SUBSCRIPTION_PERIOD = "month";
 
 interface FeatureItemProps {
   icon: keyof typeof Feather.glyphMap;
@@ -36,7 +38,7 @@ export default function PaywallScreen({ navigation }: { navigation: any }) {
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
-  const { unlockPremium, isPremium } = usePremium();
+  const { unlockPremium, isPremium, restorePurchases } = usePremium();
   const [isLoading, setIsLoading] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
 
@@ -58,38 +60,40 @@ export default function PaywallScreen({ navigation }: { navigation: any }) {
     triggerHaptic();
 
     try {
-      // In production with react-native-iap:
-      // 1. Initialize IAP connection
-      // 2. Fetch subscription products
-      // 3. Request purchase with SKU
-      // 4. Verify receipt on backend
-      // 5. Unlock premium on success
-
-      // For development/testing, simulate successful purchase
-      if (Platform.OS === "web") {
-        // Simulate purchase for web testing
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        await unlockPremium();
-        navigation.replace("PremiumUnlocked");
-      } else {
-        // On iOS, this would trigger the actual IAP flow
-        // react-native-iap requires a development build, not Expo Go
-        if (Platform.OS === "ios") {
+      if (Platform.OS === "ios" || Platform.OS === "android") {
+        if (__DEV__) {
           Alert.alert(
-            "App Store Purchase",
-            "In-App Purchases require a production build. For testing, the premium features will be unlocked.",
+            "Development Mode",
+            "In-App Purchases require a production build. Premium features will be unlocked for testing.",
             [
-              { text: "Cancel", style: "cancel" },
+              { text: "Cancel", style: "cancel", onPress: () => setIsLoading(false) },
               {
                 text: "Unlock for Testing",
                 onPress: async () => {
-                  await unlockPremium();
+                  const expiryDate = new Date();
+                  expiryDate.setMonth(expiryDate.getMonth() + 1);
+                  await unlockPremium(expiryDate, true);
                   navigation.replace("PremiumUnlocked");
                 },
               },
             ]
           );
+        } else {
+          Alert.alert(
+            "Coming Soon",
+            "Subscriptions will be available when this app is published to the App Store.",
+            [{ text: "OK", onPress: () => setIsLoading(false) }]
+          );
         }
+        return;
+      }
+
+      if (Platform.OS === "web") {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const expiryDate = new Date();
+        expiryDate.setMonth(expiryDate.getMonth() + 1);
+        await unlockPremium(expiryDate, true);
+        navigation.replace("PremiumUnlocked");
       }
     } catch (error) {
       console.error("Purchase failed:", error);
@@ -99,7 +103,9 @@ export default function PaywallScreen({ navigation }: { navigation: any }) {
         Alert.alert("Purchase Failed", "Please try again.");
       }
     } finally {
-      setIsLoading(false);
+      if (Platform.OS === "web") {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -109,20 +115,24 @@ export default function PaywallScreen({ navigation }: { navigation: any }) {
     triggerHaptic();
 
     try {
-      // In production with react-native-iap:
-      // 1. Call restorePurchases()
-      // 2. Verify restored receipts
-      // 3. Unlock premium if valid subscription found
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      if (Platform.OS === "web") {
-        window.alert("No previous purchases found.");
+      const restored = await restorePurchases();
+      
+      if (restored) {
+        navigation.replace("PremiumUnlocked");
       } else {
-        Alert.alert("Restore Purchases", "No previous purchases found.");
+        if (Platform.OS === "web") {
+          window.alert("No previous purchases found.");
+        } else {
+          Alert.alert("Restore Purchases", "No previous purchases found. If you have an active subscription, please ensure you're signed in with the same Apple ID used for the original purchase.");
+        }
       }
     } catch (error) {
       console.error("Restore failed:", error);
+      if (Platform.OS === "web") {
+        window.alert("Failed to restore purchases. Please try again.");
+      } else {
+        Alert.alert("Restore Failed", "Please try again.");
+      }
     } finally {
       setIsRestoring(false);
     }
@@ -173,8 +183,8 @@ export default function PaywallScreen({ navigation }: { navigation: any }) {
           ]}
         >
           <View style={styles.priceRow}>
-            <ThemedText style={[styles.price, { color: theme.primary }]}>$1.99</ThemedText>
-            <ThemedText style={[styles.period, { color: theme.textSecondary }]}>/month</ThemedText>
+            <ThemedText style={[styles.price, { color: theme.primary }]}>{SUBSCRIPTION_PRICE}</ThemedText>
+            <ThemedText style={[styles.period, { color: theme.textSecondary }]}>/{SUBSCRIPTION_PERIOD}</ThemedText>
           </View>
           <ThemedText style={[styles.priceNote, { color: theme.textSecondary }]}>
             Auto-renewable subscription
@@ -218,9 +228,24 @@ export default function PaywallScreen({ navigation }: { navigation: any }) {
           <ThemedText style={[styles.legalText, { color: theme.textSecondary }]}>
             Payment will be charged to your Apple ID account at confirmation of purchase.
             Subscription automatically renews unless canceled at least 24 hours before the
-            end of the current period. You can manage and cancel your subscriptions in your
-            App Store account settings.
+            end of the current period. Your account will be charged for renewal within 24 hours
+            prior to the end of the current period. You can manage and cancel your subscriptions
+            by going to your App Store account settings after purchase.
           </ThemedText>
+
+          <View style={styles.linksRow}>
+            <Button onPress={() => navigation.navigate("Legal", { type: "terms" })} variant="ghost" style={styles.linkButton}>
+              <ThemedText style={[styles.linkText, { color: theme.primary }]}>
+                Terms of Use
+              </ThemedText>
+            </Button>
+            <ThemedText style={[styles.linkSeparator, { color: theme.textSecondary }]}>|</ThemedText>
+            <Button onPress={() => navigation.navigate("Legal", { type: "privacy" })} variant="ghost" style={styles.linkButton}>
+              <ThemedText style={[styles.linkText, { color: theme.primary }]}>
+                Privacy Policy
+              </ThemedText>
+            </Button>
+          </View>
 
           <Button onPress={handleSignOut} variant="ghost" style={styles.signOutButton}>
             <ThemedText style={[styles.signOutText, { color: theme.textSecondary }]}>
@@ -318,6 +343,20 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     textAlign: "center",
+  },
+  linksRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  linkButton: {
+    paddingHorizontal: Spacing.xs,
+  },
+  linkText: {
+    fontSize: 12,
+  },
+  linkSeparator: {
+    fontSize: 12,
   },
   signOutButton: {
     alignSelf: "center",

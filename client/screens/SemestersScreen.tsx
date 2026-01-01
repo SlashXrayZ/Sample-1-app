@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View,
   StyleSheet,
@@ -7,20 +7,22 @@ import {
   Platform,
   TextInput,
   Modal,
+  Switch,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { ThemedView } from "@/components/ThemedView";
 import { Button } from "@/components/Button";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 import { useTheme } from "@/hooks/useTheme";
+import { usePremium } from "@/contexts/PremiumContext";
+import { useUserStorage } from "@/hooks/useUserStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { Semester, GPAScale, calculateGPA, SCALE_CONFIG } from "@/types/gpa";
+import { Semester, GPAScale, calculateGPA, getWeightedGPACap, SCALE_CONFIG, DEFAULT_WEIGHT_MULTIPLIERS } from "@/types/gpa";
 
 const SEMESTERS_KEY = "@gpa_semesters";
 
@@ -28,36 +30,33 @@ export default function SemestersScreen({ navigation }: { navigation: any }) {
   const { theme } = useTheme();
   const headerHeight = useHeaderHeight();
   const insets = useSafeAreaInsets();
+  const { getItem, setItem, userId } = useUserStorage();
+  const { isPremium } = usePremium();
 
   const [semesters, setSemesters] = useState<Semester[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newSemesterName, setNewSemesterName] = useState("");
   const [newSemesterTerm, setNewSemesterTerm] = useState("");
   const [selectedScale, setSelectedScale] = useState<GPAScale>("US");
+  const [useWeightedGPA, setUseWeightedGPA] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       loadSemesters();
-    }, [])
+    }, [userId, getItem])
   );
 
   const loadSemesters = async () => {
-    try {
-      const stored = await AsyncStorage.getItem(SEMESTERS_KEY);
-      if (stored) {
-        setSemesters(JSON.parse(stored));
-      }
-    } catch {
-      // Silent fail
+    const stored = await getItem<Semester[]>(SEMESTERS_KEY);
+    if (stored) {
+      setSemesters(stored);
+    } else {
+      setSemesters([]);
     }
   };
 
   const saveSemesters = async (updated: Semester[]) => {
-    try {
-      await AsyncStorage.setItem(SEMESTERS_KEY, JSON.stringify(updated));
-    } catch {
-      // Silent fail
-    }
+    await setItem(SEMESTERS_KEY, updated);
   };
 
   const handleAddSemester = () => {
@@ -110,12 +109,22 @@ export default function SemestersScreen({ navigation }: { navigation: any }) {
     }
   };
 
+  const allCourses = semesters.flatMap((s) => s.courses);
+  const hasWeightedUSCourses = semesters.some(s => s.scale === "US" && s.courses.some(c => c.isWeighted));
+  const usSemesters = semesters.filter(s => s.scale === "US");
+  const usCoursesForCap = usSemesters.flatMap(s => s.courses);
+
   const calculateCumulativeGPA = useCallback(() => {
-    const allCourses = semesters.flatMap((s) => s.courses);
     if (allCourses.length === 0) return 0;
     const scale = semesters[0]?.scale || "US";
-    return calculateGPA(allCourses, scale);
-  }, [semesters]);
+    return calculateGPA(allCourses, scale, isPremium && useWeightedGPA, DEFAULT_WEIGHT_MULTIPLIERS);
+  }, [semesters, isPremium, useWeightedGPA, allCourses]);
+
+  useEffect(() => {
+    if (!hasWeightedUSCourses) {
+      setUseWeightedGPA(false);
+    }
+  }, [hasWeightedUSCourses]);
 
   const cumulativeGPA = calculateCumulativeGPA();
   const totalCredits = semesters.reduce(
@@ -143,14 +152,42 @@ export default function SemestersScreen({ navigation }: { navigation: any }) {
             ]}
           >
             <ThemedText style={[styles.summaryLabel, { color: theme.textSecondary }]}>
-              Cumulative GPA
+              {useWeightedGPA ? "Cumulative Weighted GPA" : "Cumulative GPA"}
             </ThemedText>
-            <ThemedText style={[styles.summaryValue, { color: theme.primary }]}>
-              {cumulativeGPA.toFixed(2)}
-            </ThemedText>
+            <View style={styles.gpaValueRow}>
+              <ThemedText style={[styles.summaryValue, { color: theme.primary }]}>
+                {cumulativeGPA.toFixed(2)}
+              </ThemedText>
+              {allCourses.length > 0 ? (
+                <ThemedText style={[styles.gpaOutOf, { color: theme.textSecondary }]}>
+                  {useWeightedGPA 
+                    ? ` / ${getWeightedGPACap(usCoursesForCap).toFixed(1)}`
+                    : ` / ${SCALE_CONFIG[semesters[0]?.scale || "US"].max.toFixed(1)}`
+                  }
+                </ThemedText>
+              ) : null}
+            </View>
             <ThemedText style={[styles.summaryDetails, { color: theme.textSecondary }]}>
               {semesters.length} semester{semesters.length !== 1 ? "s" : ""} | {totalCredits} credits
             </ThemedText>
+            {useWeightedGPA && allCourses.length > 0 ? (
+              <ThemedText style={[styles.gpaDisclaimer, { color: theme.textSecondary }]}>
+                Weighted GPA rules vary by school.
+              </ThemedText>
+            ) : null}
+            {isPremium && hasWeightedUSCourses ? (
+              <View style={styles.weightedGPAToggle}>
+                <ThemedText style={[styles.weightedGPAToggleText, { color: theme.textSecondary }]}>
+                  Use Weighted GPA
+                </ThemedText>
+                <Switch
+                  value={useWeightedGPA}
+                  onValueChange={setUseWeightedGPA}
+                  trackColor={{ false: theme.border, true: theme.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -319,14 +356,43 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  gpaValueRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "center",
+    marginVertical: Spacing.sm,
+  },
   summaryValue: {
     fontSize: 32,
     fontWeight: "700",
-    marginVertical: Spacing.sm,
     lineHeight: 40,
+  },
+  gpaOutOf: {
+    fontSize: 18,
+    fontWeight: "500",
+    lineHeight: 24,
   },
   summaryDetails: {
     fontSize: 14,
+  },
+  gpaDisclaimer: {
+    fontSize: 12,
+    fontStyle: "italic",
+    marginTop: Spacing.xs,
+  },
+  weightedGPAToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(128, 128, 128, 0.2)",
+  },
+  weightedGPAToggleText: {
+    fontSize: 14,
+    fontWeight: "500",
   },
   header: {
     flexDirection: "row",
